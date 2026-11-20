@@ -2,11 +2,18 @@
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, UploadFile as FastAPIUploadFile, File, HTTPException
+from fastapi import (
+    APIRouter,
+    UploadFile as FastAPIUploadFile,
+    File,
+    HTTPException
+)
 from pydantic import WithJsonSchema
 
 from detection_engine.extractor import extract_text
 from detection_engine.detector import detect_sensitive_data
+from correlation_engine.correlator import correlate_artifacts
+
 
 UploadFile = Annotated[
     FastAPIUploadFile,
@@ -41,6 +48,7 @@ async def upload_files(
     files: Annotated[list[UploadFile], File(...)]
 ):
     results = []
+    correlation_artifacts = []
 
     for file in files:
         filename = file.filename or ""
@@ -63,6 +71,11 @@ async def upload_files(
         try:
             extracted_text = extract_text(content, filename)
             findings = detect_sensitive_data(extracted_text)
+
+            correlation_artifacts.append({
+                "filename": filename,
+                "text": extracted_text
+            })
 
         except ValueError as error:
             raise HTTPException(
@@ -89,7 +102,12 @@ async def upload_files(
             "status": "scanned successfully"
         })
 
+    # Perform cross-artifact correlation
+    correlations = correlate_artifacts(correlation_artifacts)
+
     return {
         "total_files": len(results),
-        "files": results
+        "files": results,
+        "cross_artifact_correlations": correlations,
+        "total_correlations": len(correlations)
     }
