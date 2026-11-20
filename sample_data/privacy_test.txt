@@ -1,0 +1,1 @@
+Employee: Alex Kumar. Email: alex@example.com. Phone: 9876543210. Password: test123.
