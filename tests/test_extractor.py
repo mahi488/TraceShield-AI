@@ -1,63 +1,118 @@
 
-import json
-from io import BytesIO
+import pytest
 
-from pypdf import PdfWriter
-
-from detection_engine.extractor import extract_pdf_text, extract_text
+from detection_engine import extractor
 
 
-def create_test_pdf():
-    writer = PdfWriter()
-    writer.add_blank_page(width=300, height=300)
-
-    pdf_bytes = BytesIO()
-    writer.write(pdf_bytes)
-
-    return pdf_bytes.getvalue()
+def test_extract_txt_file():
+    result = extractor.extract_text(
+        b"Hello TraceShield",
+        "sample.txt"
+    )
+    assert result == "Hello TraceShield"
 
 
-def test_extract_pdf_returns_string():
-    result = extract_pdf_text(create_test_pdf())
-    assert isinstance(result, str)
+def test_extract_txt_with_utf8_bom():
+    result = extractor.extract_text(
+        b"\xef\xbb\xbfHello TraceShield",
+        "sample.txt"
+    )
+    assert result == "Hello TraceShield"
 
 
-def test_extract_pdf_handles_empty_pdf_text():
-    result = extract_pdf_text(create_test_pdf())
-    assert result == ""
+def test_extract_csv_file():
+    result = extractor.extract_text(
+        b"name,email\nAlice,alice@example.com",
+        "users.csv"
+    )
+    assert result == "name, email\nAlice, alice@example.com"
 
 
-def test_extract_txt():
-    content = b"Employee: Alex Kumar"
-    result = extract_text(content, "test.txt")
-    assert "Alex Kumar" in result
+def test_extract_json_file():
+    result = extractor.extract_text(
+        b'{"name":"Alice","active":true}',
+        "users.json"
+    )
+    assert '"name": "Alice"' in result
+    assert '"active": true' in result
 
 
-def test_extract_csv():
-    content = b"username,email\nalex,alex@example.com"
-    result = extract_text(content, "test.csv")
-    assert "alex@example.com" in result
+def test_extract_invalid_json():
+    with pytest.raises(ValueError, match="invalid JSON format"):
+        extractor.extract_text(
+            b'{"name":',
+            "users.json"
+        )
 
 
-def test_extract_json():
-    content = json.dumps({
-        "username": "alex",
-        "email": "alex@example.com"
-    }).encode("utf-8")
-
-    result = extract_text(content, "test.json")
-    assert "alex@example.com" in result
+def test_extract_invalid_text_encoding():
+    with pytest.raises(ValueError, match="unsupported text encoding"):
+        extractor.extract_text(
+            b"\xff\xfe\xfa",
+            "sample.txt"
+        )
 
 
-def test_extract_python_file():
-    content = b"password = 'test123'"
-    result = extract_text(content, "test.py")
-    assert "password" in result
+def test_extract_empty_content():
+    with pytest.raises(ValueError, match="empty"):
+        extractor.extract_text(b"", "sample.txt")
 
 
-def test_unsupported_file_format():
-    try:
-        extract_text(b"sample", "test.exe")
-        assert False, "Expected ValueError"
-    except ValueError as error:
-        assert "Unsupported extraction format" in str(error)
+def test_extract_unsupported_format():
+    with pytest.raises(ValueError, match="Unsupported extraction format"):
+        extractor.extract_text(
+            b"sample content",
+            "sample.exe"
+        )
+
+
+def test_extract_pdf_text(monkeypatch):
+    class FakePage:
+        def extract_text(self):
+            return "PDF test content"
+
+    class FakeReader:
+        is_encrypted = False
+        pages = [FakePage()]
+
+        def __init__(self, stream):
+            self.stream = stream
+
+    monkeypatch.setattr(extractor, "PdfReader", FakeReader)
+
+    result = extractor.extract_text(
+        b"fake pdf content",
+        "sample.pdf"
+    )
+
+    assert result == "PDF test content"
+
+
+def test_extract_encrypted_pdf(monkeypatch):
+    class FakeReader:
+        is_encrypted = True
+
+        def __init__(self, stream):
+            self.stream = stream
+
+    monkeypatch.setattr(extractor, "PdfReader", FakeReader)
+
+    with pytest.raises(ValueError, match="Encrypted PDF"):
+        extractor.extract_text(
+            b"fake pdf content",
+            "sample.pdf"
+        )
+
+
+def test_extract_invalid_pdf(monkeypatch):
+    class FakeReader:
+        def __init__(self, stream):
+            raise RuntimeError("internal parser detail")
+
+    monkeypatch.setattr(extractor, "PdfReader", FakeReader)
+
+    with pytest.raises(ValueError, match="PDF extraction failed"):
+        extractor.extract_text(
+            b"invalid pdf content",
+            "sample.pdf"
+        )
