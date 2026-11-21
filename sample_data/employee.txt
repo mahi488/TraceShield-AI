@@ -1,1 +1,1 @@
-Contact email: alex@example.com
+Contact: alex@example.com

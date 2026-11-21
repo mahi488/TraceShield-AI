@@ -44,8 +44,6 @@ def test_no_correlation_for_unrelated_artifacts():
     assert results == []
 
 
-# New evidence-source tracking tests
-
 def test_evidence_sources_are_tracked():
     artifacts = [
         {
@@ -108,3 +106,59 @@ def test_correlation_normalizes_identity_case():
 
     assert len(results) == 1
     assert results[0]["matched_identity"] == "a***"
+
+
+def test_generic_identity_is_not_correlated():
+    artifacts = [
+        {
+            "filename": "employee.txt",
+            "text": "Contact: support@example.com"
+        },
+        {
+            "filename": "users.txt",
+            "text": "username=support"
+        }
+    ]
+
+    results = correlate_artifacts(artifacts)
+
+    assert results == []
+
+
+def test_confidence_metadata_is_returned():
+    artifacts = [
+        {
+            "filename": "employee.txt",
+            "text": "Contact: alex@example.com"
+        },
+        {
+            "filename": "users.txt",
+            "text": "username=alex"
+        }
+    ]
+
+    results = correlate_artifacts(artifacts)
+
+    assert len(results) == 1
+    assert results[0]["identity_match_confidence"] == 0.90
+    assert results[0]["confidence_label"] == "HIGH"
+    assert results[0]["match_method"] == (
+        "Exact email local-part and username match"
+    )
+
+
+def test_same_file_identity_evidence_is_not_cross_file_correlation():
+    artifacts = [
+        {
+            "filename": "employee.txt",
+            "text": "Email: alex@example.com username=alex"
+        },
+        {
+            "filename": "other.txt",
+            "text": "No identity information here"
+        }
+    ]
+
+    results = correlate_artifacts(artifacts)
+
+    assert results == []
