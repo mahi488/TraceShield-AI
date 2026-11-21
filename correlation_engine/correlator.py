@@ -16,7 +16,7 @@ TOKEN_PATTERN = re.compile(
 
 
 def correlate_artifacts(artifacts: list[dict]) -> list[dict]:
-    """Find identities connected across multiple files."""
+    """Correlate identity evidence across multiple digital artifacts."""
 
     records = {}
 
@@ -28,33 +28,49 @@ def correlate_artifacts(artifacts: list[dict]) -> list[dict]:
         usernames = USERNAME_PATTERN.findall(text)
         has_token = bool(TOKEN_PATTERN.search(text))
 
-        # Use email local parts as identity candidates.
+        # Collect email evidence
         for email in emails:
             identity = email.split("@", 1)[0].casefold()
 
             record = records.setdefault(
                 identity,
-                {"files": set(), "evidence": set()}
+                {
+                    "files": set(),
+                    "evidence": set(),
+                    "evidence_sources": {}
+                }
             )
 
             record["files"].add(filename)
             record["evidence"].add("EMAIL")
+            record["evidence_sources"].setdefault(
+                "EMAIL", set()
+            ).add(filename)
 
-        # Match explicit usernames with email local parts.
+        # Collect username and token evidence
         for username in usernames:
             identity = username.casefold()
 
             record = records.setdefault(
                 identity,
-                {"files": set(), "evidence": set()}
+                {
+                    "files": set(),
+                    "evidence": set(),
+                    "evidence_sources": {}
+                }
             )
 
             record["files"].add(filename)
             record["evidence"].add("USERNAME")
+            record["evidence_sources"].setdefault(
+                "USERNAME", set()
+            ).add(filename)
 
-            # Associate a token with the username in the same artifact.
             if has_token:
                 record["evidence"].add("SESSION_TOKEN")
+                record["evidence_sources"].setdefault(
+                    "SESSION_TOKEN", set()
+                ).add(filename)
 
     correlations = []
 
@@ -62,21 +78,26 @@ def correlate_artifacts(artifacts: list[dict]) -> list[dict]:
         evidence = record["evidence"]
         files = record["files"]
 
+        # Require identity evidence across multiple files
         if (
             "EMAIL" in evidence
             and "USERNAME" in evidence
             and len(files) >= 2
         ):
+            token_found = "SESSION_TOKEN" in evidence
+
             correlations.append({
                 "matched_identity": identity[:1] + "***",
                 "related_files": sorted(files),
                 "evidence_types": sorted(evidence),
+                "evidence_sources": {
+                    evidence_type: sorted(source_files)
+                    for evidence_type, source_files
+                    in record["evidence_sources"].items()
+                },
                 "risk_level": (
-                    "HIGH"
-                    if "SESSION_TOKEN" in evidence
-                    else "MEDIUM"
+                    "HIGH" if token_found else "MEDIUM"
                 )
             })
 
     return correlations
-
