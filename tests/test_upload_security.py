@@ -135,3 +135,21 @@ def test_upload_sanitizes_filename_before_processing(monkeypatch):
     assert response.status_code == 200
     assert captured["filename"] == "employee.txt"
     assert response.json()["files"][0]["filename"] == "employee.txt"
+def test_upload_rejects_more_than_maximum_files():
+    files = [
+        ("files", (f"file_{i}.txt", b"sample content"))
+        for i in range(
+            upload_module.MAX_FILES_PER_REQUEST + 1
+        )
+    ]
+
+    response = client.post(
+        "/api/upload",
+        files=files
+    )
+
+    assert response.status_code == 413
+
+    assert response.json()["detail"] == (
+        "A maximum of 10 files can be uploaded at once"
+    )

@@ -36,7 +36,7 @@ ALLOWED_EXTENSIONS = {
 }
 
 MAX_FILE_SIZE = 10 * 1024 * 1024
-
+MAX_FILES_PER_REQUEST = 10
 
 def sanitize_filename(filename: str) -> str:
     """Remove directory components and unsafe control characters."""
@@ -70,6 +70,11 @@ def mask_value(value: str) -> str:
 async def upload_files(
     files: Annotated[list[UploadFile], File(...)]
 ):
+    if len(files) > MAX_FILES_PER_REQUEST:
+        raise HTTPException(
+            status_code=413,
+            detail="A maximum of 10 files can be uploaded at once"
+        )
     results = []
     correlation_artifacts = []
 
