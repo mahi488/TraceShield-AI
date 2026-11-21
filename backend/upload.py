@@ -8,12 +8,18 @@ from fastapi import (
     File,
     HTTPException
 )
+from fastapi.responses import FileResponse
 from pydantic import WithJsonSchema
 
 from detection_engine.extractor import extract_text
 from detection_engine.detector import detect_sensitive_data
 from correlation_engine.correlator import correlate_artifacts
 from ai_engine.risk_classifier import classify_risk
+from prevention_engine.redactor import redact_sensitive_data
+from prevention_engine.file_manager import (
+    save_redacted_file,
+    get_redacted_file
+)
 
 
 UploadFile = Annotated[
@@ -73,6 +79,16 @@ async def upload_files(
             extracted_text = extract_text(content, filename)
             findings = detect_sensitive_data(extracted_text)
 
+            redacted_content = redact_sensitive_data(
+                extracted_text,
+                findings
+            )
+
+            # Save the redacted content
+            file_id, saved_path = save_redacted_file(
+                redacted_content
+            )
+
             correlation_artifacts.append({
                 "filename": filename,
                 "text": extracted_text
@@ -100,13 +116,14 @@ async def upload_files(
             "extracted_characters": len(extracted_text),
             "sensitive_findings_count": len(findings),
             "findings": safe_findings,
-            "status": "scanned successfully"
+            "redacted_content": redacted_content,
+            "redacted_file_id": file_id,
+            "download_url": f"/api/redacted/{file_id}",
+            "status": "scanned, redacted and saved successfully"
         })
 
-    # Perform cross-artifact correlation
     correlations = correlate_artifacts(correlation_artifacts)
 
-    # Calculate risk for every correlation
     for correlation in correlations:
         risk_assessment = classify_risk(
             correlation["evidence_types"],
@@ -121,3 +138,29 @@ async def upload_files(
         "cross_artifact_correlations": correlations,
         "total_correlations": len(correlations)
     }
+
+
+@router.get("/redacted/{file_id}")
+def download_redacted_file(file_id: str):
+    """Download a previously saved redacted file."""
+
+    try:
+        file_path = get_redacted_file(file_id)
+
+    except ValueError as error:
+        raise HTTPException(
+            status_code=400,
+            detail=str(error)
+        )
+
+    except FileNotFoundError:
+        raise HTTPException(
+            status_code=404,
+            detail="Redacted file not found"
+        )
+
+    return FileResponse(
+        path=file_path,
+        media_type="text/plain",
+        filename=f"redacted_{file_id}.txt"
+    )

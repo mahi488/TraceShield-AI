@@ -32,3 +32,5 @@ Thumbs.db
 # Temporary files
 temp/
 tmp/
+# Generated redacted files
+storage/redacted/*.txt
