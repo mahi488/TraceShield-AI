@@ -1,6 +1,7 @@
 
 from pathlib import Path
 from typing import Annotated
+import re
 
 from fastapi import (
     APIRouter,
@@ -37,6 +38,21 @@ ALLOWED_EXTENSIONS = {
 MAX_FILE_SIZE = 10 * 1024 * 1024
 
 
+def sanitize_filename(filename: str) -> str:
+    """Remove directory components and unsafe control characters."""
+
+    filename = filename.replace("\\", "/")
+    filename = filename.rsplit("/", 1)[-1]
+
+    filename = re.sub(r"[\x00-\x1f\x7f]", "", filename)
+    filename = filename.strip(" .")
+
+    if not filename:
+        raise ValueError("Invalid filename")
+
+    return filename[:255]
+
+
 def mask_value(value: str) -> str:
     """Mask sensitive values before returning API results."""
 
@@ -58,25 +74,40 @@ async def upload_files(
     correlation_artifacts = []
 
     for file in files:
-        filename = file.filename or ""
+
+        try:
+            filename = sanitize_filename(file.filename or "")
+        except ValueError as error:
+            raise HTTPException(
+                status_code=400,
+                detail=str(error)
+            )
+
         extension = Path(filename).suffix.lower()
 
         if extension not in ALLOWED_EXTENSIONS:
             raise HTTPException(
                 status_code=400,
-                detail=f"Unsupported file type: {filename}"
+                detail="Unsupported file type"
             )
 
         content = await file.read(MAX_FILE_SIZE + 1)
 
+        if not content:
+            raise HTTPException(
+                status_code=400,
+                detail="Uploaded file is empty"
+            )
+
         if len(content) > MAX_FILE_SIZE:
             raise HTTPException(
                 status_code=413,
-                detail=f"File exceeds 10 MB limit: {filename}"
+                detail="File exceeds 10 MB limit"
             )
 
         try:
             extracted_text = extract_text(content, filename)
+
             findings = detect_sensitive_data(extracted_text)
 
             redacted_content = redact_sensitive_data(
@@ -84,7 +115,6 @@ async def upload_files(
                 findings
             )
 
-            # Save the redacted content
             file_id, saved_path = save_redacted_file(
                 redacted_content
             )
