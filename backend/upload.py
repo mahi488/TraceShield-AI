@@ -13,6 +13,7 @@ from pydantic import WithJsonSchema
 from detection_engine.extractor import extract_text
 from detection_engine.detector import detect_sensitive_data
 from correlation_engine.correlator import correlate_artifacts
+from ai_engine.risk_classifier import classify_risk
 
 
 UploadFile = Annotated[
@@ -104,6 +105,15 @@ async def upload_files(
 
     # Perform cross-artifact correlation
     correlations = correlate_artifacts(correlation_artifacts)
+
+    # Calculate risk for every correlation
+    for correlation in correlations:
+        risk_assessment = classify_risk(
+            correlation["evidence_types"],
+            len(correlation["related_files"])
+        )
+
+        correlation.update(risk_assessment)
 
     return {
         "total_files": len(results),
