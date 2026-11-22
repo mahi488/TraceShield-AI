@@ -34,3 +34,13 @@ temp/
 tmp/
 # Generated redacted files
 storage/redacted/*.txt
+# Python virtual environment
+.venv/
+
+# Environment variables and secrets
+.env
+.env.*
+!.env.example
+
+# Generated redacted files
+storage/redacted/*.txt
