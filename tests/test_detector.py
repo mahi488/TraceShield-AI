@@ -96,3 +96,71 @@ def test_credit_card_not_detected_as_aadhaar():
         item["type"] == "AADHAAR_LIKE"
         for item in findings
     )
+
+# Phase 2 regression tests
+
+def test_valid_ipv4_address():
+    findings = detect_sensitive_data("Server: 192.168.1.10")
+
+    assert any(
+        item["type"] == "IP_ADDRESS"
+        for item in findings
+    )
+
+
+def test_invalid_ipv4_address_is_ignored():
+    findings = detect_sensitive_data("Server: 999.999.999.999")
+
+    assert not any(
+        item["type"] == "IP_ADDRESS"
+        for item in findings
+    )
+
+
+def test_valid_credit_card_passes_luhn():
+    findings = detect_sensitive_data(
+        "Card: 4111 1111 1111 1111"
+    )
+
+    assert any(
+        item["type"] == "CREDIT_CARD"
+        for item in findings
+    )
+
+
+def test_invalid_credit_card_fails_luhn():
+    findings = detect_sensitive_data(
+        "Card: 4111 1111 1111 1112"
+    )
+
+    assert not any(
+        item["type"] == "CREDIT_CARD"
+        for item in findings
+    )
+
+
+def test_aadhaar_like_number_is_still_detected():
+    findings = detect_sensitive_data(
+        "Number: 1234 5678 9012"
+    )
+
+    assert any(
+        item["type"] == "AADHAAR_LIKE"
+        for item in findings
+    )
+
+
+def test_credit_card_is_not_classified_as_aadhaar():
+    findings = detect_sensitive_data(
+        "Card: 4111 1111 1111 1111"
+    )
+
+    assert any(
+        item["type"] == "CREDIT_CARD"
+        for item in findings
+    )
+
+    assert not any(
+        item["type"] == "AADHAAR_LIKE"
+        for item in findings
+    )

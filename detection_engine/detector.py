@@ -1,4 +1,5 @@
 
+import ipaddress
 import re
 
 
@@ -54,30 +55,70 @@ DETECTION_PATTERNS = {
 }
 
 
+def is_valid_ipv4(value: str) -> bool:
+    """Return True only for valid IPv4 addresses."""
+
+    try:
+        return isinstance(ipaddress.ip_address(value), ipaddress.IPv4Address)
+    except ValueError:
+        return False
+
+
+def passes_luhn(value: str) -> bool:
+    """Validate a card-shaped number using the Luhn checksum."""
+
+    digits = [int(char) for char in value if char.isdigit()]
+
+    if not 13 <= len(digits) <= 19:
+        return False
+
+    checksum = 0
+    parity = len(digits) % 2
+
+    for index, digit in enumerate(digits):
+        if index % 2 == parity:
+            digit *= 2
+
+            if digit > 9:
+                digit -= 9
+
+        checksum += digit
+
+    return checksum % 10 == 0
+
+
 def detect_sensitive_data(text: str) -> list:
-    """Find sensitive information and remove overlapping false positives."""
+    """Find sensitive information and filter common false positives."""
 
     findings = []
 
     for category, pattern in DETECTION_PATTERNS.items():
-        matches = re.finditer(pattern, text)
+        for match in re.finditer(pattern, text):
+            value = match.group()
 
-        for match in matches:
+            if category == "IP_ADDRESS" and not is_valid_ipv4(value):
+                continue
+
+            if category == "CREDIT_CARD" and not passes_luhn(value):
+                continue
+
             findings.append({
                 "type": category,
-                "value": match.group(),
+                "value": value,
                 "start": match.start(),
                 "end": match.end()
             })
 
-    # Identify credit card ranges
-    credit_card_ranges = [
-        (item["start"], item["end"])
-        for item in findings
-        if item["type"] == "CREDIT_CARD"
+    # Identify all card-shaped number ranges so they are not
+    # incorrectly classified as Aadhaar-like numbers.
+    card_shaped_ranges = [
+        (match.start(), match.end())
+        for match in re.finditer(
+            DETECTION_PATTERNS["CREDIT_CARD"],
+            text
+        )
     ]
 
-    # Remove Aadhaar findings overlapping credit card numbers
     filtered_findings = []
 
     for item in findings:
@@ -85,7 +126,7 @@ def detect_sensitive_data(text: str) -> list:
             overlaps_card = any(
                 item["start"] < card_end
                 and item["end"] > card_start
-                for card_start, card_end in credit_card_ranges
+                for card_start, card_end in card_shaped_ranges
             )
 
             if overlaps_card:

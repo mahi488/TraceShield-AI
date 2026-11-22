@@ -2,14 +2,17 @@
 import re
 
 
+# Detect email addresses.
 EMAIL_PATTERN = re.compile(
     r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"
 )
 
+# Detect usernames in common formats.
 USERNAME_PATTERN = re.compile(
     r"""(?i)["']?(?:username|user|login|account)["']?\s*[:=]\s*["']?([A-Za-z0-9._-]+)"""
 )
 
+# Detect session and access tokens.
 TOKEN_PATTERN = re.compile(
     r"""(?i)["']?(?:session[_-]?token|access[_-]?token)["']?\s*[:=]\s*["']?([A-Za-z0-9._~+/=-]{8,})"""
 )
@@ -29,7 +32,7 @@ GENERIC_IDENTITIES = {
     "noreply",
     "no-reply",
     "service",
-    "office"
+    "office",
 }
 
 
@@ -46,7 +49,14 @@ def correlate_artifacts(artifacts: list[dict]) -> list[dict]:
         usernames = USERNAME_PATTERN.findall(text)
         has_token = bool(TOKEN_PATTERN.search(text))
 
-        # Collect email evidence
+        # Exclude generic usernames before token association.
+        valid_usernames = {
+            username.casefold()
+            for username in usernames
+            if username.casefold() not in GENERIC_IDENTITIES
+        }
+
+        # Collect email evidence.
         for email in emails:
             identity = email.split("@", 1)[0].casefold()
 
@@ -58,8 +68,8 @@ def correlate_artifacts(artifacts: list[dict]) -> list[dict]:
                 {
                     "files": set(),
                     "evidence": set(),
-                    "evidence_sources": {}
-                }
+                    "evidence_sources": {},
+                },
             )
 
             record["files"].add(filename)
@@ -69,7 +79,7 @@ def correlate_artifacts(artifacts: list[dict]) -> list[dict]:
                 "EMAIL", set()
             ).add(filename)
 
-        # Collect username and token evidence
+        # Collect username and token evidence.
         for username in usernames:
             identity = username.casefold()
 
@@ -81,8 +91,8 @@ def correlate_artifacts(artifacts: list[dict]) -> list[dict]:
                 {
                     "files": set(),
                     "evidence": set(),
-                    "evidence_sources": {}
-                }
+                    "evidence_sources": {},
+                },
             )
 
             record["files"].add(filename)
@@ -92,7 +102,13 @@ def correlate_artifacts(artifacts: list[dict]) -> list[dict]:
                 "USERNAME", set()
             ).add(filename)
 
-            if has_token:
+            # Associate a token only when exactly one
+            # unique, non-generic username exists.
+            if (
+                has_token
+                and len(valid_usernames) == 1
+                and identity in valid_usernames
+            ):
                 record["evidence"].add("SESSION_TOKEN")
 
                 record["evidence_sources"].setdefault(
@@ -113,7 +129,7 @@ def correlate_artifacts(artifacts: list[dict]) -> list[dict]:
             "USERNAME", set()
         )
 
-        # Require email and username evidence in different files
+        # Require email and username evidence in different files.
         if (
             "EMAIL" in evidence
             and "USERNAME" in evidence
@@ -124,27 +140,25 @@ def correlate_artifacts(artifacts: list[dict]) -> list[dict]:
         ):
             token_found = "SESSION_TOKEN" in evidence
 
-            correlations.append({
-                "matched_identity": identity[:1] + "***",
-                "related_files": sorted(files),
-                "evidence_types": sorted(evidence),
-
-                "evidence_sources": {
-                    evidence_type: sorted(source_files)
-                    for evidence_type, source_files
-                    in record["evidence_sources"].items()
-                },
-
-                "match_method": (
-                    "Exact email local-part and username match"
-                ),
-
-                "identity_match_confidence": 0.90,
-                "confidence_label": "HIGH",
-
-                "risk_level": (
-                    "HIGH" if token_found else "MEDIUM"
-                )
-            })
+            correlations.append(
+                {
+                    "matched_identity": identity[:1] + "***",
+                    "related_files": sorted(files),
+                    "evidence_types": sorted(evidence),
+                    "evidence_sources": {
+                        evidence_type: sorted(source_files)
+                        for evidence_type, source_files
+                        in record["evidence_sources"].items()
+                    },
+                    "match_method": (
+                        "Exact email local-part and username match"
+                    ),
+                    "identity_match_confidence": 0.90,
+                    "confidence_label": "HIGH",
+                    "risk_level": (
+                        "HIGH" if token_found else "MEDIUM"
+                    ),
+                }
+            )
 
     return correlations
